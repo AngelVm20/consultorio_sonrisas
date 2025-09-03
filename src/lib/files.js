@@ -1,7 +1,9 @@
-import { open } from "@tauri-apps/api/dialog";
-import { readBinaryFile, writeBinaryFile, createDir, removeFile, exists } from "@tauri-apps/api/fs";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  readFile, writeFile, readTextFile, writeTextFile,
+  mkdir as createDir, remove as removeFile, exists, BaseDirectory
+} from "@tauri-apps/plugin-fs";
 import { appDataDir, join } from "@tauri-apps/api/path";
-import { convertFileSrc } from "@tauri-apps/api/tauri";
 
 export async function getAppDataDir() {
   return await appDataDir();
