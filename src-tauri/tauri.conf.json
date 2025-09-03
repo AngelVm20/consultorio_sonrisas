@@ -5,21 +5,21 @@
   "identifier": "sonrisas",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
     "windows": [
       {
-        "title": "odontoclinic",
+        "title": "SONRISAS",
         "width": 800,
         "height": 600
       }
     ],
     "security": {
       "csp": null,
-      "capabilities": ["fs-all"]
+      "capabilities": ["sql-cap"]
     }
   },
   "bundle": {

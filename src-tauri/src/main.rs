@@ -6,7 +6,7 @@ fn main() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_fs::init())
-    .plugin(SqlBuilder::default().build()) // plugin SQL
+    .plugin(SqlBuilder::default().build()) // <- IMPORTANTE
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

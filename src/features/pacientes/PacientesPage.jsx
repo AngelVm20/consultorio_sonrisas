@@ -12,8 +12,8 @@ export default function PacientesPage() {
   }
   useEffect(() => { load() }, [q])
 
-  function empty() { 
-    return { nombres: '', apellidos: '', cedula: '', telefono: '', fecha_nacimiento: '', direccion: '' } 
+  function empty() {
+    return { nombres: '', apellidos: '', cedula: '', telefono: '', fecha_nacimiento: '', direccion: '' }
   }
 
   async function onSubmit(e) {
@@ -26,55 +26,71 @@ export default function PacientesPage() {
   }
 
   return (
-    <div className="p-4 grid gap-4">
+    <div className="grid gap-8">
       <h2>Pacientes</h2>
-      <div>
-        <input placeholder="Buscar (apellido/cedula)" value={q} onChange={e=>setQ(e.target.value)} />
-        <button onClick={()=>setEdit(empty())}>Nuevo</button>
+
+      <div className="card">
+        <div className="row">
+          <input className="input" placeholder="Buscar (apellido/cedula)" value={q} onChange={e=>setQ(e.target.value)} style={{maxWidth:360}}/>
+          <button className="btn btn-primary" onClick={()=>setEdit(empty())}>Nuevo</button>
+        </div>
+
+        <div className="mt-12">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Apellidos</th><th>Nombres</th><th>Cédula</th><th>Teléfono</th><th>F.Nac.</th><th>Dirección</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(p=> (
+                <tr key={p.id_paciente}>
+                  <td>{p.apellidos}</td>
+                  <td>{p.nombres}</td>
+                  <td>{p.cedula}</td>
+                  <td>{p.telefono}</td>
+                  <td>{p.fecha_nacimiento}</td>
+                  <td>{p.direccion}</td>
+                  <td className="row">
+                    <button className="btn" onClick={()=>setEdit(p)}>Editar</button>
+                    <button className="btn" style={{color:'var(--danger)'}}
+                      onClick={async()=>{ if(confirm('¿Borrar?')) { await borrarPaciente(p.id_paciente); load(); } }}>
+                      Borrar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {items.length===0 && (
+                <tr><td colSpan={7} className="help">No hay resultados</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <table border={1} cellPadding={6}>
-        <thead>
-          <tr>
-            <th>Apellidos</th><th>Nombres</th><th>Cédula</th><th>Teléfono</th><th>F.Nac.</th><th>Dirección</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map(p=> (
-            <tr key={p.id_paciente}>
-              <td>{p.apellidos}</td>
-              <td>{p.nombres}</td>
-              <td>{p.cedula}</td>
-              <td>{p.telefono}</td>
-              <td>{p.fecha_nacimiento}</td>
-              <td>{p.direccion}</td>
-              <td>
-                <button onClick={()=>setEdit(p)}>Editar</button>
-                <button onClick={async()=>{ if(confirm('¿Borrar?')) { await borrarPaciente(p.id_paciente); load(); } }}>Borrar</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
       {edit && (
-        <form onSubmit={onSubmit} className="grid gap-2 border p-3">
+        <form onSubmit={onSubmit} className="card">
           <h3>{edit.id_paciente? 'Editar paciente' : 'Nuevo paciente'}</h3>
-          <input required placeholder="Nombres" value={edit.nombres}
-                 onChange={e=>setEdit({...edit, nombres: e.target.value})} />
-          <input required placeholder="Apellidos" value={edit.apellidos}
-                 onChange={e=>setEdit({...edit, apellidos: e.target.value})} />
-          <input placeholder="Cédula" value={edit.cedula ?? ''}
-                 onChange={e=>setEdit({...edit, cedula: e.target.value})} />
-          <input placeholder="Teléfono" value={edit.telefono ?? ''}
-                 onChange={e=>setEdit({...edit, telefono: e.target.value})} />
-          <input type="date" placeholder="Fecha nacimiento" value={edit.fecha_nacimiento ?? ''}
-                 onChange={e=>setEdit({...edit, fecha_nacimiento: e.target.value})} />
-          <input placeholder="Dirección" value={edit.direccion ?? ''}
-                 onChange={e=>setEdit({...edit, direccion: e.target.value})} />
-          <div className="flex gap-2">
-            <button type="submit">Guardar</button>
-            <button type="button" onClick={()=>setEdit(null)}>Cancelar</button>
+          <div className="row">
+            <input className="input" required placeholder="Nombres" value={edit.nombres}
+                   onChange={e=>setEdit({...edit, nombres: e.target.value})} style={{maxWidth:260}}/>
+            <input className="input" required placeholder="Apellidos" value={edit.apellidos}
+                   onChange={e=>setEdit({...edit, apellidos: e.target.value})} style={{maxWidth:260}}/>
+            <input className="input" placeholder="Cédula" value={edit.cedula ?? ''}
+                   onChange={e=>setEdit({...edit, cedula: e.target.value})} style={{maxWidth:180}}/>
+            <input className="input" placeholder="Teléfono" value={edit.telefono ?? ''}
+                   onChange={e=>setEdit({...edit, telefono: e.target.value})} style={{maxWidth:180}}/>
+            <input className="input" type="date" value={edit.fecha_nacimiento ?? ''}
+                   onChange={e=>setEdit({...edit, fecha_nacimiento: e.target.value})} style={{maxWidth:190}}/>
+          </div>
+          <div className="row mt-12">
+            <input className="input" placeholder="Dirección" value={edit.direccion ?? ''}
+                   onChange={e=>setEdit({...edit, direccion: e.target.value})}/>
+          </div>
+          <div className="row mt-12">
+            <button className="btn btn-primary" type="submit">Guardar</button>
+            <button className="btn" type="button" onClick={()=>setEdit(null)}>Cancelar</button>
+            <span className="help ml-auto">Los cambios se guardan en la base local</span>
           </div>
         </form>
       )}

@@ -1,7 +1,14 @@
 import Database from "@tauri-apps/plugin-sql";
+
 let db = null;
 
 export async function getDb() {
+  // Evita usar plugin SQL fuera de Tauri (p.ej. navegador)
+  const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+  if (!isTauri) {
+    throw new Error("Esta pantalla debe ejecutarse en la app de escritorio (Tauri). Usa `npm run tauri:dev`.");
+  }
+
   if (!db) {
     db = await Database.load("sqlite:clinic.db");
     await runMigrations(db);

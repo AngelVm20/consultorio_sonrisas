@@ -5,6 +5,7 @@ import App from './App'
 import PacientesPage from './features/pacientes/PacientesPage'
 import ConsultasPage from './features/consultas/ConsultasPage'
 import CajaPage from './features/caja/CajaPage'
+import './styles.css'
 
 const router = createBrowserRouter([
   { path: '/', element: <App />, children: [

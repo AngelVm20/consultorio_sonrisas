@@ -2,28 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { agregarMovimiento, borrarMovimiento, listarMovimientos, resumenSemanas } from "./caja.api";
 
 function pad(n){ return String(n).padStart(2,'0'); }
-function formatISO(d) {
+function formatISO(d){
   const dt = d instanceof Date ? d : new Date(d);
   return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
 }
-function mondayOf(d = new Date()) {
-  const dt = new Date(d);
-  const day = dt.getDay(); // 0=domingo, 1=lunes
-  const diff = (day === 0 ? -6 : 1 - day);
-  dt.setDate(dt.getDate() + diff);
-  return dt;
-}
-function sundayOf(d = new Date()) {
-  const mon = mondayOf(d);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  return sun;
-}
-
-function toCurrency(n) {
-  const v = Number(n || 0);
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+function mondayOf(d = new Date()){ const dt = new Date(d); const day = dt.getDay(); const diff = (day === 0 ? -6 : 1 - day); dt.setDate(dt.getDate()+diff); return dt; }
+function sundayOf(d = new Date()){ const mon = mondayOf(d); const sun = new Date(mon); sun.setDate(mon.getDate()+6); return sun; }
+function toCurrency(n){ const v = Number(n||0); return v.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}); }
 
 function arrToCSV(rows, headers) {
   const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
@@ -38,109 +23,116 @@ export default function CajaPage() {
   const [movs, setMovs] = useState([]);
   const [weeks, setWeeks] = useState([]);
 
-  // formulario rápido
   const [fecha, setFecha] = useState(formatISO(new Date()));
   const [monto, setMonto] = useState("");
   const [nota, setNota] = useState("");
 
-  async function load() {
+  async function load(){
     const m = await listarMovimientos(fi, ff);
     setMovs(m);
     const w = await resumenSemanas(fi, ff);
     setWeeks(w);
   }
-  useEffect(() => { load(); }, [fi, ff]);
+  useEffect(()=>{ load(); }, [fi, ff]);
 
-  const totales = useMemo(() => {
-    let ingresos = 0, gastos = 0;
+  const totales = useMemo(()=> {
+    let ingresos=0, gastos=0;
     for (const r of movs) {
-      if (r.tipo === "INGRESO") ingresos += Number(r.monto || 0);
-      if (r.tipo === "GASTO") gastos  += Number(r.monto || 0);
+      if (r.tipo === "INGRESO") ingresos += Number(r.monto||0);
+      if (r.tipo === "GASTO") gastos  += Number(r.monto||0);
     }
     return { ingresos, gastos, saldo: ingresos - gastos };
   }, [movs]);
 
-  async function add(tipo) {
-    if (!monto || Number(monto) <= 0) { alert("Monto inválido"); return; }
+  async function add(tipo){
+    if (!monto || Number(monto)<=0) { alert("Monto inválido"); return; }
     await agregarMovimiento({ fecha, tipo, monto, nota });
     setMonto(""); setNota("");
     await load();
   }
-
-  async function del(id_mov, fuente) {
+  async function del(id_mov, fuente){
     if (fuente === "CONSULTA" && !confirm("Este movimiento viene de una consulta. ¿Eliminar de todos modos?")) return;
     await borrarMovimiento(id_mov);
     await load();
   }
 
-  function exportMovsCSV() {
+  function exportMovsCSV(){
     const headers = [
-      { key: "fecha", label: "Fecha" },
-      { key: "tipo", label: "Tipo" },
-      { key: "monto", label: "Monto" },
-      { key: "fuente", label: "Fuente" },
-      { key: "id_paciente", label: "Id Paciente" },
-      { key: "id_consulta", label: "Id Consulta" },
-      { key: "nota", label: "Nota" },
+      { key:"fecha", label:"Fecha" },
+      { key:"tipo", label:"Tipo" },
+      { key:"monto", label:"Monto" },
+      { key:"fuente", label:"Fuente" },
+      { key:"id_paciente", label:"Id Paciente" },
+      { key:"id_consulta", label:"Id Consulta" },
+      { key:"nota", label:"Nota" },
     ];
     const csv = arrToCSV(movs, headers);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url; a.download = `movimientos_${fi}_a_${ff}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
-
-  function exportWeeksCSV() {
+  function exportWeeksCSV(){
     const headers = [
-      { key: "semana_iso", label: "Semana" },
-      { key: "desde", label: "Desde" },
-      { key: "hasta", label: "Hasta" },
-      { key: "ingresos", label: "Ingresos" },
-      { key: "gastos", label: "Gastos" },
-      { key: "saldo", label: "Saldo" },
+      { key:"semana_iso", label:"Semana" },
+      { key:"desde", label:"Desde" },
+      { key:"hasta", label:"Hasta" },
+      { key:"ingresos", label:"Ingresos" },
+      { key:"gastos", label:"Gastos" },
+      { key:"saldo", label:"Saldo" },
     ];
     const csv = arrToCSV(weeks, headers);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url; a.download = `resumen_semanal_${fi}_a_${ff}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="p-4 grid" style={{ gap: 12 }}>
+    <div className="grid gap-8">
       <h2>Caja</h2>
 
-      {/* Filtro por rango */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label>Desde <input type="date" value={fi} onChange={(e)=>setFi(e.target.value)} /></label>
-        <label>Hasta <input type="date" value={ff} onChange={(e)=>setFf(e.target.value)} /></label>
-        <button onClick={exportMovsCSV}>Exportar Movimientos (CSV)</button>
-        <button onClick={exportWeeksCSV}>Exportar Resumen (CSV)</button>
-        <div style={{ marginLeft: "auto" }}>
-          <b>Ingresos:</b> ${toCurrency(totales.ingresos)} &nbsp;
-          <b>Gastos:</b> ${toCurrency(totales.gastos)} &nbsp;
-          <b>Saldo:</b> ${toCurrency(totales.saldo)}
+      {/* Filtro + totales */}
+      <div className="card">
+        <div className="row">
+          <label>Desde
+            <input className="input" type="date" value={fi} onChange={(e)=>setFi(e.target.value)} style={{ width: 160, marginLeft: 8 }}/>
+          </label>
+          <label>Hasta
+            <input className="input" type="date" value={ff} onChange={(e)=>setFf(e.target.value)} style={{ width: 160, marginLeft: 8 }}/>
+          </label>
+          <button className="btn" onClick={exportMovsCSV}>Exportar Movimientos (CSV)</button>
+          <button className="btn" onClick={exportWeeksCSV}>Exportar Resumen (CSV)</button>
+          <div className="ml-auto help">
+            <b>Ingresos:</b> ${toCurrency(totales.ingresos)} &nbsp;
+            <b>Gastos:</b> ${toCurrency(totales.gastos)} &nbsp;
+            <b>Saldo:</b> ${toCurrency(totales.saldo)}
+          </div>
         </div>
       </div>
 
       {/* Alta rápida */}
-      <div style={{ border: "1px solid #ddd", borderRadius: 4, padding: 12 }}>
+      <div className="card">
         <h3>Agregar movimiento</h3>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label>Fecha <input type="date" value={fecha} onChange={(e)=>setFecha(e.target.value)} /></label>
-          <label>Monto (USD) <input type="number" step="0.01" value={monto} onChange={(e)=>setMonto(e.target.value)} /></label>
-          <label style={{ flex: 1 }}>Nota <input style={{ width: "100%" }} value={nota} onChange={(e)=>setNota(e.target.value)} /></label>
-          <button onClick={()=>add("INGRESO")}>+ Ingreso</button>
-          <button onClick={()=>add("GASTO")}>+ Gasto</button>
+        <div className="row mt-8">
+          <label>Fecha
+            <input className="input" type="date" value={fecha} onChange={(e)=>setFecha(e.target.value)} style={{ width: 160, marginLeft: 8 }}/>
+          </label>
+          <label>Monto (USD)
+            <input className="input" type="number" step="0.01" value={monto} onChange={(e)=>setMonto(e.target.value)} style={{ width: 160, marginLeft: 8 }}/>
+          </label>
+          <label style={{ flex: 1 }}>Nota
+            <input className="input" value={nota} onChange={(e)=>setNota(e.target.value)} style={{ marginLeft: 8 }}/>
+          </label>
+          <button className="btn btn-primary" onClick={()=>add("INGRESO")}>+ Ingreso</button>
+          <button className="btn" onClick={()=>add("GASTO")}>+ Gasto</button>
         </div>
       </div>
 
-      {/* Tabla de movimientos */}
-      <div style={{ border: "1px solid #ddd", borderRadius: 4, padding: 12, overflow: "auto" }}>
+      {/* Movimientos */}
+      <div className="card">
         <h3>Movimientos</h3>
-        <table border={1} cellPadding={6} style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="table mt-8">
           <thead>
             <tr>
               <th>Fecha</th>
@@ -164,21 +156,21 @@ export default function CajaPage() {
                 <td>{m.id_consulta || "-"}</td>
                 <td>{m.nota || "-"}</td>
                 <td>
-                  <button onClick={()=>del(m.id_mov, m.fuente)} style={{ color: "#a00" }}>Borrar</button>
+                  <button className="btn" onClick={()=>del(m.id_mov, m.fuente)} style={{ color: "var(--danger)" }}>Borrar</button>
                 </td>
               </tr>
             ))}
             {movs.length === 0 && (
-              <tr><td colSpan={8} style={{ color: "#666", textAlign: "center" }}>Sin movimientos en el rango</td></tr>
+              <tr><td colSpan={8} className="help">Sin movimientos en el rango</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Resumen semanal */}
-      <div style={{ border: "1px solid #ddd", borderRadius: 4, padding: 12, overflow: "auto" }}>
+      {/* Resumen por semana */}
+      <div className="card">
         <h3>Resumen por semana</h3>
-        <table border={1} cellPadding={6} style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className="table mt-8">
           <thead>
             <tr>
               <th>Semana</th>
@@ -201,7 +193,7 @@ export default function CajaPage() {
               </tr>
             ))}
             {weeks.length === 0 && (
-              <tr><td colSpan={6} style={{ color: "#666", textAlign: "center" }}>Sin semanas en el rango</td></tr>
+              <tr><td colSpan={6} className="help">Sin semanas en el rango</td></tr>
             )}
           </tbody>
         </table>

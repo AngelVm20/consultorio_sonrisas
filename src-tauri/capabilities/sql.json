@@ -1,0 +1,10 @@
+{
+  "$schema": "https://tauri.app/schema/capability.json",
+  "identifier": "sql-cap",
+  "description": "Permisos para usar plugin-sql",
+  "windows": ["main"],
+  "permissions": [
+    "sql:default",
+    "sql:allow-execute"
+  ]
+}
