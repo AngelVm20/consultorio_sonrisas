@@ -1,31 +1,20 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { resolve } from 'path'
+import fs from 'fs'
 
-const host = process.env.TAURI_DEV_HOST;
-
-// https://vite.dev/config/
-export default defineConfig(async () => ({
-  plugins: [react()],
-
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
-  server: {
-    port: 1420,
-    strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
+export default defineConfig({
+  plugins: [
+    react(),
+    {
+      name: 'copy-migrations',
+      closeBundle() {
+        const src = resolve(__dirname, 'db/migrations.sql')
+        const dest = resolve(__dirname, 'dist/migrations.sql')
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dest)
         }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      },
     },
-  },
-}));
+  ],
+})
