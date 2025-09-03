@@ -1,15 +1,16 @@
 import Database from "@tauri-apps/plugin-sql";
-import { appDataDir, join } from "@tauri-apps/api/path";
-import { mkdir } from "@tauri-apps/plugin-fs";
 
-let db;
+let db = null;
+
 export async function getDb() {
+  // Evita usar plugin SQL fuera de Tauri (p.ej. navegador)
+  const isTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+  if (!isTauri) {
+    throw new Error("Esta pantalla debe ejecutarse en la app de escritorio (Tauri). Usa `npm run tauri:dev`.");
+  }
+
   if (!db) {
-    const base = await appDataDir();                 // p.ej. C:\Users\...\AppData\Roaming\<tu-app>\
-    const dir  = await join(base, "odontoclinic");   // subcarpeta propia
-    await mkdir(dir, { recursive: true }).catch(()=>{});
-    const file = await join(dir, "clinic.db");
-    db = await Database.load(`sqlite:${file}`);
+    db = await Database.load("sqlite:clinic.db");
     await runMigrations(db);
   }
   return db;
@@ -20,8 +21,11 @@ async function runMigrations(db) {
     const res = await fetch("/migrations.sql");
     if (!res.ok) return;
     const sql = await res.text();
-    for (const st of sql.split(/;\s*$/m).map(s=>s.trim()).filter(Boolean)) {
+    const statements = sql.split(/;\s*$/m).map(s => s.trim()).filter(Boolean);
+    for (const st of statements) {
       await db.execute(st);
     }
-  } catch (e) { console.error("migrations", e); }
+  } catch (e) {
+    console.error("No se pudieron correr migraciones", e);
+  }
 }
