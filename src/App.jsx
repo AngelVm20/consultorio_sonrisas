@@ -6,9 +6,9 @@ export default function App(){
     <div className="container">
       <h1>SONRISAS</h1>
       <nav>
-        <Link to="/pacientes">Pacientes</Link>
-        <Link to="/consultas">Consultas</Link>
-        <Link to="/caja">Caja</Link>
+        <Link to="/pacientes">PACIENTES</Link>
+        <Link to="/consultas">CONSULTAS</Link>
+        <Link to="/caja">CAJA</Link>
       </nav>
       <hr/>
       <Outlet />

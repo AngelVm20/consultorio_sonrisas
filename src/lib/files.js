@@ -1,56 +1,54 @@
-import { open, save } from "@tauri-apps/plugin-dialog";
-import {
-  readFile, writeFile, readTextFile, writeTextFile,
-  mkdir as createDir, remove as removeFile, exists, BaseDirectory
-} from "@tauri-apps/plugin-fs";
-import { appDataDir, join } from "@tauri-apps/api/path";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readFile, writeFile, mkdir, remove, exists } from "@tauri-apps/plugin-fs";
+import { appDataDir, join, basename } from "@tauri-apps/api/path";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
-export async function getAppDataDir() {
-  return await appDataDir();
-}
-
-export async function ensureDir(dir) {
-  const ok = await exists(dir);
-  if (!ok) {
-    await createDir(dir, { recursive: true });
+export function fileUrl(p) {
+  if (!p || typeof p !== "string") return "";           // <- evita .replace en undefined
+  try {
+    const norm = p.replace(/\\/g, "/");
+    return convertFileSrc(norm);
+  } catch {
+    return "";
   }
-}
-
-export async function getMediaDirForPaciente(id_paciente) {
-  const base = await getAppDataDir();
-  const media = await join(base, "media");
-  await ensureDir(media);
-  const dir = await join(media, String(id_paciente));
-  await ensureDir(dir);
-  return dir;
-}
-
-export function fileUrl(localPath) {
-  // Para usar en <img src="...">
-  return convertFileSrc(localPath);
 }
 
 export async function pickImageFile() {
   const selected = await open({
     multiple: false,
-    filters: [{ name: "Imágenes", extensions: ["jpg", "jpeg", "png", "webp"] }],
+    filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "webp"] }],
   });
   if (!selected) return null;
-  return selected; // string path
+  const path = Array.isArray(selected) ? selected[0] : selected;
+  return {
+    path,
+    name: path.split(/[\\/]/).pop(),
+    previewUrl: convertFileSrc(path),
+  };
 }
 
-export async function copyImageToMedia(id_paciente, fechaISO, originalPath, indexHint = 1) {
-  const dir = await getMediaDirForPaciente(id_paciente);
-  // conserva extensión
-  const ext = (String(originalPath).split(".").pop() || "jpg").toLowerCase();
-  const fname = `${fechaISO}_${Date.now()}_${indexHint}.${ext}`;
-  const destPath = await join(dir, fname);
-  const bin = await readBinaryFile(originalPath);
-  await writeBinaryFile({ contents: bin, path: destPath });
-  return destPath; // ruta absoluta local
+async function ensureDir(dir) {
+  if (!(await exists(dir))) {
+    await mkdir(dir, { recursive: true });
+  }
 }
 
-export async function deleteLocalFile(path) {
-  const ok = await exists(path);
-  if (ok) await removeFile(path);
+export async function copyImageToMedia(idPaciente, fechaISO, sourcePath, index = 1) {
+  const root = await appDataDir();
+  const folder = await join(root, "media", String(idPaciente), fechaISO);
+  await ensureDir(folder);
+
+  const name = await basename(sourcePath);
+  const dest = await join(folder, name);
+
+  const bytes = await readFile(sourcePath);
+  await writeFile(dest, bytes);
+
+  return dest;
+}
+
+export async function deleteLocalFile(p) {
+  if (await exists(p)) {
+    await remove(p);
+  }
 }

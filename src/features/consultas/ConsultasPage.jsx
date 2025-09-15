@@ -12,10 +12,10 @@ import {
 } from "./consultas.api";
 import { pickImageFile, copyImageToMedia, fileUrl, deleteLocalFile } from "../../lib/files";
 
-function pad(n){ return String(n).padStart(2,'0'); }
+function pad(n) { return String(n).padStart(2, '0'); }
 function formatISO(d) {
   const dt = d instanceof Date ? d : new Date(d);
-  return `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 const emptyConsulta = (id_paciente) => ({
   id_paciente,
@@ -42,16 +42,57 @@ export default function ConsultasPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(null);
 
+  //Estados nuevos y reset
+  const [pendingFotos, setPendingFotos] = useState([]); // [{path, name}]
+
+
   // buscar pacientes
   useEffect(() => {
     let alive = true;
     (async () => {
       if (!q?.trim()) { setSug([]); return; }
       const rows = await listarPacientes(q.trim());
-      if (alive) setSug(rows.slice(0,20));
+      if (alive) setSug(rows.slice(0, 20));
     })();
     return () => { alive = false; };
   }, [q]);
+
+  async function selectConsulta(c) {
+    const id = c.id_consulta;            // evita Number() innecesario
+    setSelId(id);
+    setEditing(false);
+    setDraft(null);
+
+    // 1) pinta algo inmediatamente
+    setSel({
+      id_consulta: id,
+      id_paciente: paciente?.id_paciente,
+      fecha_consulta: c.fecha_consulta,
+      motivo: c.motivo ?? "",
+      procedimiento: c.procedimiento ?? "",
+      ingreso: c.ingreso ?? 0,
+      detalle: c.detalle ?? "",          // puede venir vacío en el listado
+      __loading: true
+    });
+    setFotos([]);
+
+    // 2) luego carga el detalle real y las fotos
+    try {
+      const [d, f] = await Promise.all([
+        detalleConsulta(id),
+        listarFotos(id),
+      ]);
+      // si detalle no vino (raro), conserva lo que ya teníamos
+      setSel(d || c);
+      setFotos(f || []);
+    } catch (e) {
+      console.error("Error al cargar detalle:", e);
+      // al menos deja lo básico visible
+      setSel(c);
+      setFotos([]);
+    }
+  }
+
 
   async function pickPaciente(p) {
     setPaciente(p);
@@ -60,18 +101,9 @@ export default function ConsultasPage() {
     setConsultas(hist);
     setSelId(null); setSel(null); setFotos([]);
     setEditing(false); setDraft(null);
-  }
+    setPendingFotos([]);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      if (!selId) { setSel(null); setFotos([]); return; }
-      const d = await detalleConsulta(selId);
-      const f = await listarFotos(selId);
-      if (alive) { setSel(d); setFotos(f); setEditing(false); setDraft(null); }
-    })();
-    return () => { alive = false; };
-  }, [selId]);
+  }
 
   async function refreshHistorial() {
     if (!paciente) return;
@@ -83,6 +115,7 @@ export default function ConsultasPage() {
     if (!paciente) return;
     setEditing(true);
     setSelId(null); setSel(null); setFotos([]);
+    setPendingFotos([]);                   // <<-- reset
     setDraft(emptyConsulta(paciente.id_paciente));
   }
   function startEditar() {
@@ -95,16 +128,39 @@ export default function ConsultasPage() {
     e.preventDefault();
     if (!draft || !paciente) return;
 
-    if (draft.id_consulta) {
-      await actualizarConsulta(draft.id_consulta, draft);
-      setSelId(draft.id_consulta);
-    } else {
-      const id_consulta = await crearConsulta(draft);
-      setSelId(id_consulta);
+    try {
+      if (draft.id_consulta) {
+        // update
+        await actualizarConsulta(draft.id_consulta, draft);
+        await selectConsulta({ ...draft, id_consulta: draft.id_consulta });
+      } else {
+        // create
+        const id = await crearConsulta(draft);
+
+        // si hay fotos en staging, copiarlas + insertarlas
+        if (pendingFotos.length) {
+          const fechaISO = draft.fecha_consulta;
+          let orden = 1;
+          for (const pf of pendingFotos) {
+            const savedPath = await copyImageToMedia(paciente.id_paciente, fechaISO, pf, orden);
+            await agregarFoto(id, savedPath, "", orden);
+            orden++;
+          }
+          setPendingFotos([]);
+        }
+
+        await selectConsulta({ ...draft, id_consulta: id });
+      }
+
+      setEditing(false);
+      setDraft(null);
+      await refreshHistorial();
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo guardar la consulta. Revisa la consola para más detalles.");
     }
-    setEditing(false); setDraft(null);
-    await refreshHistorial();
   }
+
 
   async function onBorrarConsulta() {
     if (!sel) return;
@@ -116,27 +172,45 @@ export default function ConsultasPage() {
 
   // fotos
   async function onAgregarFoto() {
-    const id_consulta = selId || draft?.id_consulta;
-    if (!id_consulta) { alert("Primero guarda la consulta, luego agrega fotos."); return; }
-    const pick = await pickImageFile();
-    if (!pick) return;
+    try {
+      const picked = await pickImageFile();
+      if (!picked) return;
 
-    const fechaISO = (sel?.fecha_consulta || draft?.fecha_consulta || formatISO(new Date()));
-    const savedPath = await copyImageToMedia(paciente.id_paciente, fechaISO, pick, (fotos?.length || 0) + 1);
-    await agregarFoto(id_consulta, savedPath, "", (fotos?.length || 0) + 1);
-    const f = await listarFotos(id_consulta);
-    setFotos(f);
+      // Caso 1: ya existe consulta (editar/detalle)
+      const id = selId || draft?.id_consulta;
+      if (id) {
+        const fechaISO = sel?.fecha_consulta || draft?.fecha_consulta || formatISO(new Date());
+        const savedPath = await copyImageToMedia(paciente.id_paciente, fechaISO, picked, (fotos?.length || 0) + 1);
+        await agregarFoto(id, savedPath, "", (fotos?.length || 0) + 1);
+        const f = await listarFotos(id);
+        setFotos(f);
+        return;
+      }
+
+      // Caso 2: consulta nueva (no tiene id todavía) -> staging
+      setPendingFotos(prev => [...prev, picked]);
+    } catch (e) {
+      console.error("onAgregarFoto error", e);
+      alert("No se pudo agregar la foto. Revisa permisos de archivos.");
+    }
+  }
+
+  function removePending(idx) {
+    setPendingFotos(prev => prev.filter((_, i) => i !== idx));
   }
 
   async function onBorrarFoto(foto) {
     if (!confirm("¿Borrar esta foto?")) return;
     await borrarFoto(foto.id_foto);
-    try { await deleteLocalFile(foto.ruta_archivo); } catch {}
+    try { await deleteLocalFile(foto.ruta_archivo); } catch { }
     const f = await listarFotos(selId || draft?.id_consulta);
     setFotos(f);
   }
 
-  function thumbSrc(f) { return fileUrl(f.ruta_archivo); }
+  function thumbSrc(f) {
+    // si la foto es "nueva" (aún no guardada) puede traer previewUrl
+    return f?.previewUrl || fileUrl(f?.ruta_archivo);
+  }
 
   return (
     <div className="grid gap-8">
@@ -159,9 +233,9 @@ export default function ConsultasPage() {
           <div className="card mt-8" style={{ padding: 8 }}>
             {sug.map(p => (
               <div key={p.id_paciente}
-                   className="row"
-                   style={{ padding: 8, borderRadius: 8, cursor: "pointer" }}
-                   onClick={() => pickPaciente(p)}
+                className="row"
+                style={{ padding: 8, borderRadius: 8, cursor: "pointer" }}
+                onClick={() => pickPaciente(p)}
               >
                 <span><b>{p.apellidos} {p.nombres}</b></span>
                 <span className="badge">{p.cedula || "s/cedula"}</span>
@@ -182,14 +256,15 @@ export default function ConsultasPage() {
           {paciente && consultas.length === 0 && <div className="help mt-8">Sin consultas.</div>}
           <div className="mt-8" style={{ display: "grid", gap: 8 }}>
             {consultas.map((c) => (
-              <div key={c.id_consulta}
-                   onClick={() => setSelId(c.id_consulta)}
-                   className="row card"
-                   style={{
-                     padding: 10,
-                     borderColor: selId === c.id_consulta ? "var(--accent)" : "var(--border)",
-                     cursor: "pointer"
-                   }}
+              <div
+                key={c.id_consulta}
+                onClick={() => selectConsulta(c)}   // <--- aquí
+                className="row card"
+                style={{
+                  padding: 10,
+                  borderColor: selId === c.id_consulta ? "var(--accent)" : "var(--border)",
+                  cursor: "pointer"
+                }}
               >
                 <div><b>{c.fecha_consulta}</b></div>
                 <div className="badge">${Number(c.ingreso || 0).toFixed(2)}</div>
@@ -254,33 +329,95 @@ export default function ConsultasPage() {
                 <label style={{ flex: 1 }}>
                   <div className="help">Fecha</div>
                   <input className="input" type="date" value={draft.fecha_consulta}
-                    onChange={(e) => setDraft({ ...draft, fecha_consulta: e.target.value })}/>
+                    onChange={(e) => setDraft({ ...draft, fecha_consulta: e.target.value })} />
                 </label>
 
                 <label style={{ flex: 1 }}>
                   <div className="help">Motivo</div>
                   <input className="input" value={draft.motivo}
-                    onChange={(e) => setDraft({ ...draft, motivo: e.target.value })}/>
+                    onChange={(e) => setDraft({ ...draft, motivo: e.target.value })} />
                 </label>
 
                 <label style={{ flex: 1 }}>
                   <div className="help">Procedimiento</div>
                   <input className="input" value={draft.procedimiento}
-                    onChange={(e) => setDraft({ ...draft, procedimiento: e.target.value })}/>
+                    onChange={(e) => setDraft({ ...draft, procedimiento: e.target.value })} />
                 </label>
 
                 <label style={{ width: 180 }}>
                   <div className="help">Ingreso (USD)</div>
                   <input className="input" type="number" step="0.01" value={draft.ingreso}
-                    onChange={(e) => setDraft({ ...draft, ingreso: e.target.value })}/>
+                    onChange={(e) => setDraft({ ...draft, ingreso: e.target.value })} />
                 </label>
               </div>
 
               <label>
                 <div className="help">Detalle</div>
                 <textarea className="input" rows={4} value={draft.detalle}
-                  onChange={(e) => setDraft({ ...draft, detalle: e.target.value })}/>
+                  onChange={(e) => setDraft({ ...draft, detalle: e.target.value })} />
               </label>
+
+              <hr />
+              <div className="row">
+                <h3 style={{ margin: 0 }}>Fotos</h3>
+                <button className="btn btn-primary ml-auto" type="button" onClick={onAgregarFoto}>Agregar foto</button>
+              </div>
+
+              {!draft?.id_consulta ? (
+                // NUEVA consulta: mostrar fotos en staging
+                <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+                  {pendingFotos.map((pf, idx) => {
+                    const src = pf.previewUrl || ""; // preview directo del archivo elegido
+                    const key = pf.path || idx;      // algo estable para la key
+                    return (
+                      <div key={key} className="card" style={{ width: 160, padding: 8 }}>
+                        {src ? (
+                          <img
+                            src={src}
+                            alt=""
+                            style={{ width: "100%", height: 110, objectFit: "cover", borderRadius: 8 }}
+                          />
+                        ) : (
+                          <div className="help" style={{ width: "100%", height: 110, display: "grid", placeItems: "center" }}>
+                            Sin vista previa
+                          </div>
+                        )}
+                        <button
+                          className="btn mt-8"
+                          type="button"
+                          style={{ color: "var(--danger)" }}
+                          onClick={() => removePending(idx)}
+                        >
+                          Quitar
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {!pendingFotos.length && <div className="help">Sin fotos</div>}
+                </div>
+              ) : (
+                // Consulta existente: mostrar fotos guardadas
+                <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+                  {fotos.map((f) => (
+                    <div key={f.id_foto} className="card" style={{ width: 160, padding: 8 }}>
+                      <img
+                        src={thumbSrc(f)} // usa fileUrl(ruta_archivo)
+                        alt=""
+                        style={{ width: "100%", height: 110, objectFit: "cover", borderRadius: 8 }}
+                      />
+                      <button
+                        className="btn mt-8"
+                        type="button"
+                        style={{ color: "var(--danger)" }}
+                        onClick={() => onBorrarFoto(f)}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                  {!fotos.length && <div className="help">Sin fotos</div>}
+                </div>
+              )}
 
               <div className="row">
                 <button className="btn btn-primary" type="submit">Guardar</button>

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://tauri.app/schema/capability.json",
+  "identifier": "dialog-cap",
+  "description": "Permiso para abrir el diálogo de archivos",
+  "windows": ["main"],
+  "permissions": ["dialog:default", "dialog:allow-open"]
+}

@@ -125,7 +125,7 @@ export default function CajaPage() {
             <input className="input" value={nota} onChange={(e)=>setNota(e.target.value)} style={{ marginLeft: 8 }}/>
           </label>
           <button className="btn btn-primary" onClick={()=>add("INGRESO")}>+ Ingreso</button>
-          <button className="btn" onClick={()=>add("GASTO")}>+ Gasto</button>
+          <button className="btn" onClick={()=>add("GASTO")}>- Gasto</button>
         </div>
       </div>
 

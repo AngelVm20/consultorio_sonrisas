@@ -19,7 +19,19 @@
     ],
     "security": {
       "csp": null,
-      "capabilities": ["sql-cap"]
+      "capabilities": [
+        "sql-cap",
+        "fs-cap",
+        "dialog-cap"
+      ],
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$APPDATA/**",
+          "$APPCACHE/**",
+          "$RESOURCE/**"
+        ]
+      }
     }
   },
   "bundle": {
