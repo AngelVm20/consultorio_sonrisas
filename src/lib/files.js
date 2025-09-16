@@ -4,12 +4,12 @@ import { appDataDir, join, basename } from "@tauri-apps/api/path";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 export function fileUrl(p) {
-  if (!p || typeof p !== "string") return "";           // <- evita .replace en undefined
+  if (!p || typeof p !== "string") return null;
   try {
     const norm = p.replace(/\\/g, "/");
     return convertFileSrc(norm);
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -33,10 +33,16 @@ async function ensureDir(dir) {
   }
 }
 
-export async function copyImageToMedia(idPaciente, fechaISO, sourcePath, index = 1) {
+export async function copyImageToMedia(idPaciente, fechaISO, source, index = 1) {
+  // Puede venir un string o un objeto { path, ... }
+  const sourcePath = typeof source === "string" ? source : source?.path;
+  if (!sourcePath) throw new Error("copyImageToMedia: source path vacío");
+
   const root = await appDataDir();
   const folder = await join(root, "media", String(idPaciente), fechaISO);
-  await ensureDir(folder);
+  if (!(await exists(folder))) {
+    await mkdir(folder, { recursive: true });
+  }
 
   const name = await basename(sourcePath);
   const dest = await join(folder, name);

@@ -1,0 +1,17 @@
+{
+  "identifier": "path-cap",
+  "description": "Permisos de path usados por la app",
+  "windows": ["*"],
+  "macOS": ["*"],
+  "linux": ["*"],
+  "permissions": [
+    "core:path:default",
+    "core:path:allow-resolve-directory",
+    "core:path:allow-join",
+    "core:path:allow-normalize",
+    "core:path:allow-is-absolute",
+    "core:path:allow-dirname",
+    "core:path:allow-basename",
+    "core:path:allow-extname"
+  ]
+}

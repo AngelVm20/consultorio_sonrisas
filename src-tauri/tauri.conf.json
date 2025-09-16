@@ -22,7 +22,8 @@
       "capabilities": [
         "sql-cap",
         "fs-cap",
-        "dialog-cap"
+        "dialog-cap",
+        "path-cap"
       ],
       "assetProtocol": {
         "enable": true,
