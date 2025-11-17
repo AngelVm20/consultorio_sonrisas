@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+// ConsultasPage.jsx
+import React, { useEffect, useRef, useState } from "react";
 import { listarPacientes } from "../pacientes/pacientes.api";
 import {
   listarConsultasPorPaciente,
@@ -17,6 +18,88 @@ import {
   deleteLocalFile,
 } from "../../lib/files";
 
+const MAX_FOTOS = 10;
+
+/* ---------- Modal de confirmación reusable ---------- */
+function ConfirmModal({
+  open,
+  title = "Confirmar",
+  message,
+  confirmText = "Confirmar",
+  cancelText = "Cancelar",
+  onConfirm,
+  onCancel,
+  busy = false,
+}) {
+  const confirmBtnRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => confirmBtnRef.current?.focus(), 0);
+    function onKey(e) {
+      if (e.key === "Escape") onCancel?.();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 9999,
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(480px, 92vw)",
+          background: "#fff",
+          borderRadius: 12,
+          boxShadow: "0 10px 30px rgba(0,0,0,.25)",
+          padding: 18,
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+          {title}
+        </div>
+        <div style={{ color: "#555", lineHeight: 1.4 }}>{message}</div>
+
+        <div
+          className="row"
+          style={{ justifyContent: "flex-end", gap: 8, marginTop: 16 }}
+        >
+          <button className="btn" type="button" onClick={onCancel} disabled={busy}>
+            {cancelText}
+          </button>
+          <button
+            className="btn"
+            type="button"
+            ref={confirmBtnRef}
+            onClick={onConfirm}
+            disabled={busy}
+            style={{ background: "var(--danger, #e74c3c)", color: "#fff" }}
+          >
+            {busy ? "Borrando…" : confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------- Utilidades -------------------- */
 function pad(n) {
   return String(n).padStart(2, "0");
 }
@@ -34,18 +117,20 @@ const emptyConsulta = (id_paciente) => ({
 });
 
 /** Mini-componente para una tarjeta de foto segura */
-function PhotoThumb({ src, onRemove }) {
+function PhotoThumb({ src, onRemove, onOpen }) {
   return (
     <div className="card" style={{ width: 160, padding: 8 }}>
       {src ? (
         <img
           src={src}
           alt=""
+          onClick={onOpen}
           style={{
             width: "100%",
             height: 110,
             objectFit: "cover",
             borderRadius: 8,
+            cursor: onOpen ? "zoom-in" : "default",
           }}
         />
       ) : (
@@ -75,6 +160,7 @@ function PhotoThumb({ src, onRemove }) {
   );
 }
 
+/* -------------------- Página -------------------- */
 export default function ConsultasPage() {
   // búsqueda/selección de paciente
   const [q, setQ] = useState("");
@@ -94,7 +180,16 @@ export default function ConsultasPage() {
   // staging de fotos para consulta NUEVA
   const [pendingFotos, setPendingFotos] = useState([]); // [{path, name, previewUrl}]
 
-  // buscar pacientes
+  // visor de imagen (modal)
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  const [zoom, setZoom] = useState(1);
+
+  // confirmaciones
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmKind, setConfirmKind] = useState(null); // 'consulta' | 'foto'
+  const [fotoAEliminar, setFotoAEliminar] = useState(null);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -110,14 +205,32 @@ export default function ConsultasPage() {
     };
   }, [q]);
 
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "Escape") closeLightbox();
+      if (!lightboxSrc) return;
+      if (e.key === "+" || e.key === "=") setZoom((z) => Math.min(5, z + 0.25));
+      if (e.key === "-") setZoom((z) => Math.max(0.25, z - 0.25));
+      if (e.key === "0") setZoom(1);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxSrc]);
+
+  function openLightbox(src) {
+    setLightboxSrc(src);
+    setZoom(1);
+  }
+  function closeLightbox() {
+    setLightboxSrc(null);
+    setZoom(1);
+  }
+
   /** Devuelve un src seguro para <img>, o null si no hay */
   function thumbSrc(f) {
     if (!f) return null;
     if (f.previewUrl) return f.previewUrl; // fotos en staging
-    if (f.ruta_archivo) {
-      const u = fileUrl(f.ruta_archivo);
-      return u || null; // jamás ""
-    }
+    if (f.ruta_archivo) return fileUrl(f.ruta_archivo) || null;
     return null;
   }
 
@@ -126,9 +239,8 @@ export default function ConsultasPage() {
     setSelId(id);
     setEditing(false);
     setDraft(null);
-    setPendingFotos([]); // reset de staging al cambiar selección
+    setPendingFotos([]);
 
-    // pinta algo inmediato
     setSel({
       id_consulta: id,
       id_paciente: paciente?.id_paciente,
@@ -162,7 +274,7 @@ export default function ConsultasPage() {
     setFotos([]);
     setEditing(false);
     setDraft(null);
-    setPendingFotos([]); // reset
+    setPendingFotos([]);
   }
 
   async function refreshHistorial() {
@@ -177,7 +289,7 @@ export default function ConsultasPage() {
     setSelId(null);
     setSel(null);
     setFotos([]);
-    setPendingFotos([]); // reset
+    setPendingFotos([]);
     setDraft(emptyConsulta(paciente.id_paciente));
   }
   function startEditar() {
@@ -192,28 +304,26 @@ export default function ConsultasPage() {
 
     try {
       if (draft.id_consulta) {
-        // update
         await actualizarConsulta(draft.id_consulta, draft);
         await selectConsulta({ ...draft, id_consulta: draft.id_consulta });
       } else {
-        // create
-        console.log("[GUARDAR] creando consulta", draft);
         const id = await crearConsulta(draft);
-        console.log("[GUARDAR] id nueva consulta =", id, "fotos en staging:", pendingFotos.length);
 
-        // si hay fotos en staging, copiarlas + insertarlas
         if (pendingFotos.length) {
           const fechaISO = draft.fecha_consulta;
           let orden = 1;
           for (const pf of pendingFotos) {
-            const savedPath = await copyImageToMedia(paciente.id_paciente, fechaISO, pf.path, orden);
-            console.log("[FOTO] insertar →", { id, savedPath, orden, typeofId: typeof id });
+            const savedPath = await copyImageToMedia(
+              paciente.id_paciente,
+              fechaISO,
+              pf.path,
+              orden
+            );
             await agregarFoto(id, savedPath, "", orden);
             orden++;
           }
           setPendingFotos([]);
         }
-
         await selectConsulta({ ...draft, id_consulta: id });
       }
 
@@ -226,35 +336,80 @@ export default function ConsultasPage() {
     }
   }
 
-  async function onBorrarConsulta() {
+  /* ---------- Borrado con modal ---------- */
+  function pedirBorrarConsulta() {
     if (!sel) return;
-    if (!confirm("¿Borrar esta consulta?")) return;
-    await borrarConsulta(sel.id_consulta);
-    setSelId(null);
-    setSel(null);
-    setFotos([]);
-    await refreshHistorial();
+    setConfirmKind("consulta");
+    setConfirmOpen(true);
+  }
+  async function confirmarBorrarConsulta() {
+    if (!sel) return;
+    try {
+      setConfirmBusy(true);
+      await borrarConsulta(sel.id_consulta);
+      setSelId(null);
+      setSel(null);
+      setFotos([]);
+      await refreshHistorial();
+    } catch (e) {
+      console.error(e);
+      alert("No se pudo borrar la consulta.");
+    } finally {
+      setConfirmBusy(false);
+      setConfirmOpen(false);
+      setConfirmKind(null);
+    }
   }
 
   // fotos
+  function fotosTotalesSiAgregoEnNueva(mas = 0) {
+    return (pendingFotos?.length || 0) + mas;
+  }
+  function fotosTotalesSiAgregoEnExistente(mas = 0) {
+    return (fotos?.length || 0) + mas;
+  }
+
   async function onAgregarFoto() {
     try {
+      const esExistente = !!(selId || draft?.id_consulta);
+      const actuales = esExistente
+        ? fotosTotalesSiAgregoEnExistente(0)
+        : fotosTotalesSiAgregoEnNueva(0);
+      if (actuales >= MAX_FOTOS) {
+        alert(`Límite alcanzado: máximo ${MAX_FOTOS} fotos por consulta.`);
+        return;
+      }
+
       const picked = await pickImageFile();
       if (!picked) return;
 
-      // Caso 1: ya existe consulta (editar/detalle)
       const id = selId || draft?.id_consulta;
       if (id) {
+        const actuales2 = fotosTotalesSiAgregoEnExistente(1);
+        if (actuales2 > MAX_FOTOS) {
+          alert(`Límite: máximo ${MAX_FOTOS} fotos por consulta.`);
+          return;
+        }
         const fechaISO =
           sel?.fecha_consulta || draft?.fecha_consulta || formatISO(new Date());
-        const savedPath = await copyImageToMedia(paciente.id_paciente, fechaISO, picked.path, (fotos?.length || 0) + 1);
+        const savedPath = await copyImageToMedia(
+          paciente.id_paciente,
+          fechaISO,
+          picked.path,
+          (fotos?.length || 0) + 1
+        );
         await agregarFoto(id, savedPath, "", (fotos?.length || 0) + 1);
         const f = await listarFotos(id);
         setFotos(f);
         return;
       }
 
-      // Caso 2: consulta nueva (no tiene id todavía) -> staging
+      // nueva (staging)
+      const actuales3 = fotosTotalesSiAgregoEnNueva(1);
+      if (actuales3 > MAX_FOTOS) {
+        alert(`Límite: máximo ${MAX_FOTOS} fotos por consulta.`);
+        return;
+      }
       setPendingFotos((prev) => [...prev, picked]);
     } catch (e) {
       console.error("onAgregarFoto error", e);
@@ -266,14 +421,30 @@ export default function ConsultasPage() {
     setPendingFotos((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function onBorrarFoto(foto) {
-    if (!confirm("¿Borrar esta foto?")) return;
-    await borrarFoto(foto.id_foto);
+  function pedirBorrarFoto(foto) {
+    setFotoAEliminar(foto);
+    setConfirmKind("foto");
+    setConfirmOpen(true);
+  }
+  async function confirmarBorrarFoto() {
+    if (!fotoAEliminar) return;
     try {
-      await deleteLocalFile(foto.ruta_archivo);
-    } catch { }
-    const f = await listarFotos(selId || draft?.id_consulta);
-    setFotos(f);
+      setConfirmBusy(true);
+      await borrarFoto(fotoAEliminar.id_foto);
+      try {
+        await deleteLocalFile(fotoAEliminar.ruta_archivo);
+      } catch { }
+      const f = await listarFotos(selId || draft?.id_consulta);
+      setFotos(f);
+    } catch (e) {
+      console.error(e);
+      alert("No se pudo borrar la foto.");
+    } finally {
+      setConfirmBusy(false);
+      setConfirmOpen(false);
+      setConfirmKind(null);
+      setFotoAEliminar(null);
+    }
   }
 
   return (
@@ -292,6 +463,7 @@ export default function ConsultasPage() {
           />
           <button
             className="btn btn-primary"
+            type="button"
             onClick={startNueva}
             disabled={!paciente}
           >
@@ -375,21 +547,17 @@ export default function ConsultasPage() {
           {paciente && sel && !editing && (
             <div className="grid gap-8">
               <div className="row">
-                <h3 style={{ margin: 0 }}>
-                  Consulta del {sel.fecha_consulta}
-                </h3>
-                <button className="btn ml-auto" onClick={startEditar}>
+                <h3 style={{ margin: 0 }}>Consulta del {sel.fecha_consulta}</h3>
+                <button className="btn ml-auto" type="button" onClick={startEditar}>
                   Editar
                 </button>
                 <button
                   className="btn"
+                  type="button"
                   style={{ color: "var(--danger)" }}
-                  onClick={onBorrarConsulta}
+                  onClick={pedirBorrarConsulta}
                 >
                   Borrar
-                </button>
-                <button className="btn btn-primary" onClick={startNueva}>
-                  Nueva consulta
                 </button>
               </div>
               <div className="row gap-8">
@@ -413,19 +581,17 @@ export default function ConsultasPage() {
               <hr />
               <div className="row">
                 <h3 style={{ margin: 0 }}>Fotos</h3>
-                <button
-                  className="btn btn-primary ml-auto"
-                  onClick={onAgregarFoto}
-                >
-                  Agregar foto
-                </button>
+                <span className="help ml-auto">
+                  Máximo {MAX_FOTOS} fotos por consulta
+                </span>
               </div>
               <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
                 {(fotos || []).map((f, idx) => (
                   <PhotoThumb
                     key={f.id_foto ?? idx}
                     src={thumbSrc(f)}
-                    onRemove={() => onBorrarFoto(f)}
+                    onRemove={() => pedirBorrarFoto(f)}
+                    onOpen={() => openLightbox(thumbSrc(f))}
                   />
                 ))}
                 {!fotos?.length && <div className="help">Sin fotos</div>}
@@ -502,6 +668,9 @@ export default function ConsultasPage() {
               <hr />
               <div className="row">
                 <h3 style={{ margin: 0 }}>Fotos</h3>
+                <span className="help" style={{ marginLeft: 12 }}>
+                  Máximo {MAX_FOTOS} fotos por consulta
+                </span>
                 <button
                   className="btn btn-primary ml-auto"
                   type="button"
@@ -512,25 +681,25 @@ export default function ConsultasPage() {
               </div>
 
               {!draft?.id_consulta ? (
-                // NUEVA consulta: mostrar fotos en staging
                 <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
                   {pendingFotos.map((pf, idx) => (
                     <PhotoThumb
                       key={pf.path || idx}
                       src={pf.previewUrl || null}
                       onRemove={() => removePending(idx)}
+                      onOpen={() => openLightbox(pf.previewUrl || null)}
                     />
                   ))}
                   {!pendingFotos.length && <div className="help">Sin fotos</div>}
                 </div>
               ) : (
-                // Consulta existente: mostrar fotos guardadas
                 <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
                   {(fotos || []).map((f, idx) => (
                     <PhotoThumb
                       key={f.id_foto ?? idx}
                       src={thumbSrc(f)}
-                      onRemove={() => onBorrarFoto(f)}
+                      onRemove={() => pedirBorrarFoto(f)}
+                      onOpen={() => openLightbox(thumbSrc(f))}
                     />
                   ))}
                   {!fotos?.length && <div className="help">Sin fotos</div>}
@@ -562,6 +731,124 @@ export default function ConsultasPage() {
           )}
         </div>
       </div>
+
+      {/* Lightbox (visor de imagen) */}
+      {lightboxSrc && (
+        <div
+          className="lightbox-backdrop"
+          onClick={closeLightbox}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            display: "grid",
+            placeItems: "center",
+            zIndex: 9998,
+            padding: 16,
+          }}
+        >
+          <div
+            className="lightbox-container"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              width: "min(1000px, 90vw)",
+              height: "min(700px, 80vh)",
+              borderRadius: 14,
+              background: "#111",
+              boxShadow: "0 10px 30px rgba(0,0,0,.5)",
+              display: "grid",
+              gridTemplateRows: "1fr auto",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{ display: "grid", placeItems: "center", overflow: "hidden" }}
+              onWheel={(e) => {
+                e.preventDefault();
+                const delta = e.deltaY < 0 ? 0.1 : -0.1;
+                setZoom((z) => Math.min(5, Math.max(0.25, z + delta)));
+              }}
+            >
+              <img
+                src={lightboxSrc}
+                alt=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "center center",
+                  transition: "transform 0.12s ease-out",
+                  userSelect: "none",
+                  pointerEvents: "none",
+                }}
+                onDoubleClick={() => setZoom((z) => (z === 1 ? 2 : 1))}
+              />
+            </div>
+
+            <div
+              className="row"
+              style={{
+                gap: 8,
+                justifyContent: "center",
+                alignItems: "center",
+                background: "rgba(255,255,255,0.9)",
+                padding: "10px 12px",
+              }}
+            >
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setZoom((z) => Math.max(0.25, z - 0.25))}
+              >
+                −
+              </button>
+              <span className="help">Zoom: {(zoom * 100).toFixed(0)}%</span>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setZoom((z) => Math.min(5, z + 0.25))}
+              >
+                +
+              </button>
+              <button type="button" className="btn" onClick={() => setZoom(1)}>
+                Reset
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={closeLightbox}
+                style={{ marginLeft: 8, fontWeight: 600 }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación (consulta/foto) */}
+      <ConfirmModal
+        open={confirmOpen}
+        title={confirmKind === "foto" ? "Eliminar foto" : "Eliminar consulta"}
+        message={
+          confirmKind === "foto"
+            ? "¿Seguro que deseas borrar esta foto? Esta acción no se puede deshacer."
+            : "¿Seguro que deseas borrar esta consulta? Esta acción no se puede deshacer."
+        }
+        confirmText="Sí, borrar"
+        cancelText="Cancelar"
+        onConfirm={
+          confirmKind === "foto" ? confirmarBorrarFoto : confirmarBorrarConsulta
+        }
+        onCancel={() => {
+          setConfirmOpen(false);
+          setConfirmKind(null);
+          setFotoAEliminar(null);
+        }}
+        busy={confirmBusy}
+      />
     </div>
   );
 }
